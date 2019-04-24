@@ -58,6 +58,13 @@ class BasePlayer:
         self.increasing_list = [SelfCard(1)]
         self.decreasing_list = [SelfCard(60)]
         self.hand = []
+        # does the player has already played a card on one of his opponent
+        # stacks this turn
+        self.has_played_on_opp_this_turn = False
+
+    def reset_turn(self):
+        self.pick_card_from_stack(n=2)
+        self.has_played_on_opp_this_turn = False
 
     def pick_card_from_stack(self, n=1):
         self.hand += [self.full_list.pop(0) for i in range(min(n, len(self.full_list)))]
@@ -65,6 +72,7 @@ class BasePlayer:
     def play_on_increasing(self, card):
         print("plays {} on increasing".format(card))
         if self.is_valid_play_on_increasing(card):
+            self.use_hand_card(card)
             self.increasing_list.append(card)
         else:
             raise ForbiddenPlay
@@ -72,6 +80,8 @@ class BasePlayer:
     def play_on_opponent_increasing(self, opponent, card):
         print("plays {} on opponent increasing".format(card))
         if self.is_valid_play_on_opponent_increasing(opponent, card):
+            self.use_hand_card(card)
+            self.has_played_on_opp_this_turn = True
             opponent.increasing_list.append(card.get_opp())
         else:
             raise ForbiddenPlay
@@ -79,6 +89,7 @@ class BasePlayer:
     def play_on_decreasing(self, card):
         print("plays {} on decreasing".format(card))
         if self.is_valid_play_on_decreasing(card):
+            self.use_hand_card(card)
             self.decreasing_list.append(card)
         else:
             raise ForbiddenPlay
@@ -86,15 +97,17 @@ class BasePlayer:
     def play_on_opponent_decreasing(self, opponent, card):
         print("plays {} on opponent decreasing".format(card))
         if self.is_valid_play_on_opponent_decreasing(opponent, card):
+            self.use_hand_card(card)
             opponent.decreasing_list.append(card.get_opp())
+            self.has_played_on_opp_this_turn = True
         else:
             raise ForbiddenPlay
 
     def is_valid_play_on_opponent_increasing(self, opponent, card):
-        return card < opponent.increasing_list[-1]
+        return not self.has_played_on_opp_this_turn and card < opponent.increasing_list[-1]
 
     def is_valid_play_on_opponent_decreasing(self, opponent, card):
-        return card > opponent.increasing_list[-1]
+        return not self.has_played_on_opp_this_turn and card > opponent.increasing_list[-1]
 
     def is_valid_play_on_increasing(self, card):
         return card > self.increasing_list[-1] or card == self.increasing_list[-1] - 10
@@ -102,16 +115,34 @@ class BasePlayer:
     def is_valid_play_on_decreasing(self, card):
         return card < self.decreasing_list[-1] or card == self.decreasing_list[-1] + 10
 
+    def cost_play_on_increasing(self, opp, card):
+        raise NotImplementedError
+    def cost_play_on_decreasing(self, opp, card):
+        raise NotImplementedError
+    def cost_play_on_opp_increasing(self, opp, card):
+        raise NotImplementedError
+    def cost_play_on_opp_decreasing(self, opp, card):
+        raise NotImplementedError
+
     def register_valid_plays(self, opponent, card):
         plays = []
         if self.is_valid_play_on_increasing(card):
-            plays.append(lambda v: self.play_on_increasing(v))
+            plays.append((
+                self.cost_play_on_increasing(opponent, card),
+                lambda: self.play_on_increasing(card)))
         if self.is_valid_play_on_decreasing(card):
-            plays.append(lambda v: self.play_on_decreasing(v))
+            plays.append((
+                self.cost_play_on_decreasing(opponent, card),
+                lambda: self.play_on_decreasing(card)
+                ))
         if self.is_valid_play_on_opponent_increasing(opponent, card):
-            plays.append(lambda v: self.play_on_opponent_increasing(opponent, v))
+            plays.append((
+                self.cost_play_on_opp_increasing(opponent, card),
+                lambda: self.play_on_opponent_increasing(opponent, card)))
         if self.is_valid_play_on_opponent_decreasing(opponent, card):
-            plays.append(lambda v: self.play_on_opponent_decreasing(opponent, v))
+            plays.append((
+                self.cost_play_on_opp_decreasing(opponent, card),
+                lambda: self.play_on_opponent_decreasing(opponent, card)))
         return plays
 
     def has_valid_play(self, opponent, card):
@@ -137,13 +168,15 @@ class BasePlayer:
         return playable_cards
 
     def play_one_turn(self, opponent):
+        # reset turn initial state
+        self.reset_turn()
         # two cards to be played
         for card_played in range(2):
             card, play = self.get_card_to_play(opponent)
-            card = self.use_hand_card(card)
-            play(card)
+            if card is None or play is None:
+                return False
+            play()
         # draw 2 new cards at the end of turn
-        self.pick_card_from_stack(n=2)
         return True
 
 class RandomPlayer(BasePlayer):
@@ -153,12 +186,36 @@ class RandomPlayer(BasePlayer):
         playable_cards = self.get_playable_cards(opponent)
         if not len(playable_cards):
             # no card could be played
-            return False
+            return None, None
         card = random.choice(playable_cards)
         plays = self.register_valid_plays(opponent, card)
-        play = random.choice(plays)
+        cost, play = random.choice(plays)
         return card, play
 
+    def cost_play_on_increasing(self, opp, card):
+        return 0
+    def cost_play_on_decreasing(self, opp, card):
+        return 0
+    def cost_play_on_opp_increasing(self, opp, card):
+        return 0
+    def cost_play_on_opp_decreasing(self, opp, card):
+        return 0
+
+class StarterPlayer(BasePlayer):
+    def get_card_to_play(self, opponent):
+        playable_cards = self.get_playable_cards(opponent)
+        plays = sum([[(card, cost_play) for cost_play in self.register_valid_plays(opponent, card)] for card in playable_cards], [])
+        card, (cost, play) = min(plays, key=lambda triplet: triplet[1][0])
+        return card, play
+
+    def cost_play_on_increasing(self, opp, card):
+        return abs(self.increasing_list[-1].value - card.value)
+    def cost_play_on_decreasing(self, opp, card):
+        return abs(self.decreasing_list[-1].value - card.value)
+    def cost_play_on_opp_increasing(self, opp, card):
+        return 120 - abs(opp.increasing_list[-1].value - card.value)
+    def cost_play_on_opp_decreasing(self, opp, card):
+        return 120 - abs(opp.decreasing_list[-1].value - card.value)
 
 
 PLAYER_STATE_TEMPLATE = """player {}'s
@@ -168,10 +225,10 @@ PLAYER_STATE_TEMPLATE = """player {}'s
 
 class Game:
     def __init__(self):
-        self.players = [RandomPlayer(), RandomPlayer()]
-        # initial draw
-        self.players[0].pick_card_from_stack(6)
-        self.players[1].pick_card_from_stack(6)
+        self.players = [RandomPlayer(), StarterPlayer()]
+        # initial draw (only 4, 2 more card will be picked up at beginning of first turn)
+        self.players[0].pick_card_from_stack(4)
+        self.players[1].pick_card_from_stack(4)
 
     def play_one_turn(self, player_id=0):
         print("player {} turn".format(player_id))
