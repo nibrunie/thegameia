@@ -51,7 +51,7 @@ class SelfCard(Card):
         return OppCard(self.value)
 
 
-class Player:
+class BasePlayer:
     def __init__(self):
         self.full_list = [SelfCard(i) for i in (range(2, 60))]
         random.shuffle(self.full_list)
@@ -125,22 +125,40 @@ class Player:
         return card
 
     def play_one_turn(self, opponent):
+        raise NotImplementedError
+    def display_state(self, name=""):
+        print(PLAYER_STATE_TEMPLATE.format(name, self.hand, self.increasing_list, self.decreasing_list))
+
+    def win_condition(self):
+        return len(self.hand) == 0 and len(self.full_list) == 0
+
+    def get_playable_cards(self, opponent):
+        playable_cards = [card for card in self.hand if self.has_valid_play(opponent, card)]
+        return playable_cards
+
+    def play_one_turn(self, opponent):
         # two cards to be played
         for card_played in range(2):
-            playable_cards = [card for card in self.hand if self.has_valid_play(opponent, card)]
-            if not len(playable_cards):
-                # no card could be played
-                return False
-            card = self.use_hand_card(random.choice(playable_cards))
-            plays = self.register_valid_plays(opponent, card)
-            play = random.choice(plays)
+            card, play = self.get_card_to_play(opponent)
+            card = self.use_hand_card(card)
             play(card)
         # draw 2 new cards at the end of turn
         self.pick_card_from_stack(n=2)
         return True
 
-    def display_state(self, name=""):
-        print(PLAYER_STATE_TEMPLATE.format(name, self.hand, self.increasing_list, self.decreasing_list))
+class RandomPlayer(BasePlayer):
+    """ player whose play is any valid card """
+
+    def get_card_to_play(self, opponent):
+        playable_cards = self.get_playable_cards(opponent)
+        if not len(playable_cards):
+            # no card could be played
+            return False
+        card = random.choice(playable_cards)
+        plays = self.register_valid_plays(opponent, card)
+        play = random.choice(plays)
+        return card, play
+
 
 
 PLAYER_STATE_TEMPLATE = """player {}'s
@@ -150,7 +168,7 @@ PLAYER_STATE_TEMPLATE = """player {}'s
 
 class Game:
     def __init__(self):
-        self.players = [Player(), Player()]
+        self.players = [RandomPlayer(), RandomPlayer()]
         # initial draw
         self.players[0].pick_card_from_stack(6)
         self.players[1].pick_card_from_stack(6)
@@ -165,6 +183,9 @@ class Game:
     def play_game(self):
         player_id = 0
         while self.play_one_turn(player_id):
+            if self.players[player_id].win_condition():
+                print("player {} has won".format(player_id))
+                break
             player_id = 1 - player_id
 
         self.players[player_id].display_state(str(player_id))
