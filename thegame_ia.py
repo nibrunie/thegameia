@@ -50,9 +50,14 @@ class SelfCard(Card):
     def get_opp(self):
         return OppCard(self.value)
 
+def verbose_report(msg):
+    pass
 
 class BasePlayer:
     def __init__(self):
+        self.reset()
+
+    def reset(self):
         self.full_list = [SelfCard(i) for i in (range(2, 60))]
         random.shuffle(self.full_list)
         self.increasing_list = [SelfCard(1)]
@@ -77,7 +82,7 @@ class BasePlayer:
         self.hand += [self.full_list.pop(0) for i in range(min(n, len(self.full_list)))]
 
     def play_on_increasing(self, card):
-        print("plays {} on increasing".format(card))
+        verbose_report("plays {} on increasing".format(card))
         if self.is_valid_play_on_increasing(card):
             self.use_hand_card(card)
             self.increasing_list.append(card)
@@ -85,7 +90,7 @@ class BasePlayer:
             raise ForbiddenPlay
 
     def play_on_opponent_increasing(self, opponent, card):
-        print("plays {} on opponent increasing".format(card))
+        verbose_report("plays {} on opponent increasing".format(card))
         if self.is_valid_play_on_opponent_increasing(opponent, card):
             self.use_hand_card(card)
             self.has_played_on_opp_this_turn = True
@@ -94,7 +99,7 @@ class BasePlayer:
             raise ForbiddenPlay
 
     def play_on_decreasing(self, card):
-        print("plays {} on decreasing".format(card))
+        verbose_report("plays {} on decreasing".format(card))
         if self.is_valid_play_on_decreasing(card):
             self.use_hand_card(card)
             self.decreasing_list.append(card)
@@ -102,7 +107,7 @@ class BasePlayer:
             raise ForbiddenPlay
 
     def play_on_opponent_decreasing(self, opponent, card):
-        print("plays {} on opponent decreasing".format(card))
+        verbose_report("plays {} on opponent decreasing".format(card))
         if self.is_valid_play_on_opponent_decreasing(opponent, card):
             self.use_hand_card(card)
             opponent.decreasing_list.append(card.get_opp())
@@ -197,6 +202,7 @@ class BasePlayer:
             card, play = self.get_extra_card_to_play(opponent)
             if card is None or play is None:
                 break
+            play()
         # draw 2 new cards at the end of turn
         return True
 
@@ -226,6 +232,8 @@ class StarterPlayer(BasePlayer):
     def get_card_to_play(self, opponent):
         playable_cards = self.get_playable_cards(opponent)
         plays = sum([[(card, cost_play) for cost_play in self.register_valid_plays(opponent, card)] for card in playable_cards], [])
+        if len(plays) == 0:
+            return None, None
         card, (cost, play) = min(plays, key=lambda triplet: triplet[1][0])
         return card, play
 
@@ -238,6 +246,38 @@ class StarterPlayer(BasePlayer):
     def cost_play_on_opp_decreasing(self, opp, card):
         return 120 - abs(opp.decreasing_list[-1].value - card.value)
 
+class MediumPlayer(StarterPlayer):
+    MAXIMAL_EXTRA_PLAY_THRESHOLD = 0
+
+    def cost_play_on_increasing(self, opp, card):
+        if False and card.value == self.increasing_list[-1].value - 10:
+            # interesting play
+            return 0
+        else:
+            return abs(self.increasing_list[-1].value - card.value)
+    def cost_play_on_decreasing(self, opp, card):
+        if False and card.value == self.decreasing_list[-1].value + 10:
+            # interesting play
+            return 0
+        else:
+            return abs(self.decreasing_list[-1].value - card.value)
+    def cost_play_on_opp_increasing(self, opp, card):
+        return 120 - abs(opp.increasing_list[-1].value - card.value)
+    def cost_play_on_opp_decreasing(self, opp, card):
+        return 120 - abs(opp.decreasing_list[-1].value - card.value)
+
+    def get_extra_card_to_play(self, opponent):
+        playable_cards = self.get_playable_cards(opponent)
+        # if no card is playable, we wait for next turn
+        if len(playable_cards) == 0:
+            return None, None
+
+        plays = sum([[(card, cost_play) for cost_play in self.register_valid_plays(opponent, card)] for card in playable_cards], [])
+        card, (cost, play) = min(plays, key=lambda triplet: triplet[1][0])
+        if cost > MediumPlayer.MAXIMAL_EXTRA_PLAY_THRESHOLD:
+            # if the extra play is not interesting we do not play it
+            return None, None
+        return card, play
 
 PLAYER_STATE_TEMPLATE = """player {}'s
     hand is {}
@@ -245,16 +285,21 @@ PLAYER_STATE_TEMPLATE = """player {}'s
     decreasing is {}"""
 
 class Game:
-    def __init__(self):
-        self.players = [RandomPlayer(), StarterPlayer()]
+    def __init__(self, player0, player1):
+        #self.players = [MediumPlayer(), StarterPlayer()]
+        self.players = [player0, player1]
+
+    def reset(self):
+        for player in self.players:
+            player.reset()
         # initial draw (only 4, 2 more card will be picked up at beginning of first turn)
         self.players[0].pick_card_from_stack(4)
         self.players[1].pick_card_from_stack(4)
 
     def play_one_turn(self, player_id=0):
-        print("player {} turn".format(player_id))
+        verbose_report("player {} turn".format(player_id))
         if not self.players[player_id].play_one_turn(self.players[1 - player_id]):
-            print("player {} lost !".format(player_id))
+            verbose_report("player {} lost !".format(player_id))
             return False
         return True
 
@@ -262,14 +307,25 @@ class Game:
         player_id = 0
         while self.play_one_turn(player_id):
             if self.players[player_id].win_condition():
-                print("player {} has won".format(player_id))
-                break
+                verbose_report("player {} has won".format(player_id))
+                return player_id
             player_id = 1 - player_id
 
-        self.players[player_id].display_state(str(player_id))
-        self.players[1 - player_id].display_state(str(1 - player_id))
+        #self.players[player_id].display_state(str(player_id))
+        #self.players[1 - player_id].display_state(str(1 - player_id))
+        return 1 - player_id
 
 
 if __name__ == "__main__":
-    game = Game()
-    game.play_game()
+    NUM_GAMES = 10000
+    #PLAYER_CLASS = [RandomPlayer, StarterPlayer, MediumPlayer]
+    PLAYER_CLASS = [StarterPlayer, MediumPlayer]
+    for Player0Class in PLAYER_CLASS:
+        for Player1Class in PLAYER_CLASS:
+            win_count = [0, 0]
+            game = Game(Player0Class(), Player1Class())
+            for i in range(NUM_GAMES):
+                game.reset()
+                winner_id = game.play_game()
+                win_count[winner_id] += 1
+            print(Player0Class.__name__, Player1Class.__name__, [p / NUM_GAMES * 100 for p in win_count])
