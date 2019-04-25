@@ -262,9 +262,9 @@ class MediumPlayer(StarterPlayer):
         else:
             return abs(self.decreasing_list[-1].value - card.value)
     def cost_play_on_opp_increasing(self, opp, card):
-        return 120 - abs(opp.increasing_list[-1].value - card.value)
+        return 120 + abs(opp.increasing_list[-1].value - card.value)
     def cost_play_on_opp_decreasing(self, opp, card):
-        return 120 - abs(opp.decreasing_list[-1].value - card.value)
+        return 120 + abs(opp.decreasing_list[-1].value - card.value)
 
     def get_extra_card_to_play(self, opponent):
         playable_cards = self.get_playable_cards(opponent)
