@@ -63,8 +63,15 @@ class BasePlayer:
         self.has_played_on_opp_this_turn = False
 
     def reset_turn(self):
-        self.pick_card_from_stack(n=2)
+        if self.has_played_on_opp_this_turn:
+            # refill hand completely
+            self.pick_card_from_stack(n=6 - len(self.hand))
+        else:
+            self.pick_card_from_stack(n=2)
         self.has_played_on_opp_this_turn = False
+
+    def end_turn(self):
+        pass
 
     def pick_card_from_stack(self, n=1):
         self.hand += [self.full_list.pop(0) for i in range(min(n, len(self.full_list)))]
