@@ -107,7 +107,7 @@ class BasePlayer:
         return not self.has_played_on_opp_this_turn and card < opponent.increasing_list[-1]
 
     def is_valid_play_on_opponent_decreasing(self, opponent, card):
-        return not self.has_played_on_opp_this_turn and card > opponent.increasing_list[-1]
+        return not self.has_played_on_opp_this_turn and card > opponent.decreasing_list[-1]
 
     def is_valid_play_on_increasing(self, card):
         return card > self.increasing_list[-1] or card == self.increasing_list[-1] - 10
