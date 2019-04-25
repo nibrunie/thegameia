@@ -162,8 +162,18 @@ class BasePlayer:
         self.hand.remove(card)
         return card
 
-    def play_one_turn(self, opponent):
+    def get_card_to_play(self, opponent):
+        """ function returning a tuple (card, play) indicating which
+            card and which action the player wants to execute next """
         raise NotImplementedError
+    def get_extra_card_to_play(self, opponent):
+        """ once the player has placed two cards, he can (if he wishes)
+            try to play other card
+
+            returning None, None indicates that the play does not want to
+            play extra cards """
+        return None, None
+
     def display_state(self, name=""):
         print(PLAYER_STATE_TEMPLATE.format(name, self.hand, self.increasing_list, self.decreasing_list))
 
@@ -183,6 +193,10 @@ class BasePlayer:
             if card is None or play is None:
                 return False
             play()
+        while True:
+            card, play = self.get_extra_card_to_play(opponent)
+            if card is None or play is None:
+                break
         # draw 2 new cards at the end of turn
         return True
 
