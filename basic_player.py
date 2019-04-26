@@ -9,6 +9,10 @@ class ForbiddenPlay(Exception):
     """ error raised whan an unauthorized play is intended """
     pass
 
+class CardNotInHand(Exception):
+    """ error raised when a player tries to play a card not in his hand """
+    pass
+
 class Action:
     class PlayOnSelfIncreasing: pass
     class PlayOnSelfDecreasing: pass
@@ -145,7 +149,7 @@ class BasePlayer:
 
             returning None, None indicates that the play does not want to
             play extra cards """
-        return None 
+        return None
 
     def display_state(self, name=""):
         print(PLAYER_STATE_TEMPLATE.format(name, self.hand, self.increasing_list, self.decreasing_list))
@@ -158,6 +162,8 @@ class BasePlayer:
         return playable_cards
 
     def execute(self, action, opponent):
+        if not action.card in self.hand:
+            raise CardNotInHand
         if action.action_type is Action.PlayOnSelfIncreasing:
             self.play_on_increasing(action.card)
         elif action.action_type is Action.PlayOnSelfDecreasing:
