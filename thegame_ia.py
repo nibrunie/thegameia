@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 import random
+import argparse
 
 from basic_player import BasePlayer
 from utils import verbose_report
+import utils
 
 
 class RandomPlayer(BasePlayer):
@@ -128,7 +130,14 @@ class Game:
 
 
 if __name__ == "__main__":
-    NUM_GAMES = 30000
+    parser = argparse.ArgumentParser(description='IA design and evaluation framework for The Game')
+    parser.add_argument('--num', type=int, help='number of party to simulate')
+    parser.add_argument('--verbose', action="store_const", const=True, default=False, help='activate verbose message')
+    args = parser.parse_args()
+
+    NUM_GAMES = args.num
+    utils.VERBOSE_ENABLED = args.verbose
+
     #PLAYER_CLASS = [RandomPlayer, StarterPlayer, MediumPlayer]
     PLAYER_CLASS = [StarterPlayer, MediumPlayer]
     for Player0Class in PLAYER_CLASS:
