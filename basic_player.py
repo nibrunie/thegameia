@@ -9,6 +9,16 @@ class ForbiddenPlay(Exception):
     """ error raised whan an unauthorized play is intended """
     pass
 
+class Action:
+    class PlayOnSelfIncreasing: pass
+    class PlayOnSelfDecreasing: pass
+    class PlayOnOppIncreasing: pass
+    class PlayOnOppDecreasing: pass
+    def __init__(self, card, action_type, cost):
+        self.card = card
+        self.action_type = action_type
+        self.cost = cost
+
 
 class BasePlayer:
     def __init__(self):
@@ -93,26 +103,27 @@ class BasePlayer:
     def cost_play_on_opp_decreasing(self, opp, card):
         raise NotImplementedError
 
-    def register_valid_plays(self, opponent, card):
-        plays = []
+    def register_valid_actions(self, opponent, card):
+        actions = []
         if self.is_valid_play_on_increasing(card):
-            plays.append((
-                self.cost_play_on_increasing(opponent, card),
-                lambda: self.play_on_increasing(card)))
+            actions.append(Action(
+                card, Action.PlayOnSelfIncreasing, 
+                self.cost_play_on_increasing(opponent, card)
+            ))
         if self.is_valid_play_on_decreasing(card):
-            plays.append((
-                self.cost_play_on_decreasing(opponent, card),
-                lambda: self.play_on_decreasing(card)
-                ))
+            actions.append(Action(
+                card, Action.PlayOnSelfDecreasing,
+                self.cost_play_on_decreasing(opponent, card)
+            ))
         if self.is_valid_play_on_opponent_increasing(opponent, card):
-            plays.append((
-                self.cost_play_on_opp_increasing(opponent, card),
-                lambda: self.play_on_opponent_increasing(opponent, card)))
+            actions.append(Action(
+                card, Action.PlayOnOppIncreasing,
+                self.cost_play_on_opp_increasing(opponent, card)))
         if self.is_valid_play_on_opponent_decreasing(opponent, card):
-            plays.append((
-                self.cost_play_on_opp_decreasing(opponent, card),
-                lambda: self.play_on_opponent_decreasing(opponent, card)))
-        return plays
+            actions.append(Action(
+                card, Action.PlayOnOppDecreasing,
+                self.cost_play_on_opp_decreasing(opponent, card)))
+        return actions
 
     def has_valid_play(self, opponent, card):
         return self.is_valid_play_on_increasing(card) or \
@@ -124,7 +135,7 @@ class BasePlayer:
         self.hand.remove(card)
         return card
 
-    def get_card_to_play(self, opponent):
+    def get_action_to_play(self, opponent):
         """ function returning a tuple (card, play) indicating which
             card and which action the player wants to execute next """
         raise NotImplementedError
@@ -134,7 +145,7 @@ class BasePlayer:
 
             returning None, None indicates that the play does not want to
             play extra cards """
-        return None, None
+        return None 
 
     def display_state(self, name=""):
         print(PLAYER_STATE_TEMPLATE.format(name, self.hand, self.increasing_list, self.decreasing_list))
@@ -146,20 +157,31 @@ class BasePlayer:
         playable_cards = [card for card in self.hand if self.has_valid_play(opponent, card)]
         return playable_cards
 
+    def execute(self, action, opponent):
+        if action.action_type is Action.PlayOnSelfIncreasing:
+            self.play_on_increasing(action.card)
+        elif action.action_type is Action.PlayOnSelfDecreasing:
+            self.play_on_decreasing(action.card)
+        elif action.action_type is Action.PlayOnOppIncreasing:
+            self.play_on_opponent_increasing(opponent, action.card)
+        elif action.action_type is Action.PlayOnOppDecreasing:
+            self.play_on_opponent_decreasing(opponent, action.card)
+
+
     def play_one_turn(self, opponent):
         # reset turn initial state
         self.reset_turn()
         # two cards to be played
         for card_played in range(2):
-            card, play = self.get_card_to_play(opponent)
-            if card is None or play is None:
+            action = self.get_action_to_play(opponent)
+            if action is None:
                 return False
-            play()
+            self.execute(action, opponent)
         while True:
-            card, play = self.get_extra_card_to_play(opponent)
-            if card is None or play is None:
+            action = self.get_extra_card_to_play(opponent)
+            if action is None:
                 break
-            play()
+            self.execute(action, opponent)
         # draw 2 new cards at the end of turn
         return True
 

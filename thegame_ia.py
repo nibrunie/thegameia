@@ -8,15 +8,15 @@ from utils import verbose_report
 class RandomPlayer(BasePlayer):
     """ player whose play is any valid card """
 
-    def get_card_to_play(self, opponent):
+    def get_action_to_play(self, opponent):
         playable_cards = self.get_playable_cards(opponent)
         if not len(playable_cards):
             # no card could be played
-            return None, None
+            return None
         card = random.choice(playable_cards)
-        plays = self.register_valid_plays(opponent, card)
-        cost, play = random.choice(plays)
-        return card, play
+        possible_actions = self.register_valid_actions(opponent, card)
+        action = random.choice(possible_actions)
+        return action
 
     def cost_play_on_increasing(self, opp, card):
         return 0
@@ -28,13 +28,13 @@ class RandomPlayer(BasePlayer):
         return 0
 
 class StarterPlayer(BasePlayer):
-    def get_card_to_play(self, opponent):
+    def get_action_to_play(self, opponent):
         playable_cards = self.get_playable_cards(opponent)
-        plays = sum([[(card, cost_play) for cost_play in self.register_valid_plays(opponent, card)] for card in playable_cards], [])
-        if len(plays) == 0:
-            return None, None
-        card, (cost, play) = min(plays, key=lambda triplet: triplet[1][0])
-        return card, play
+        actions = sum([self.register_valid_actions(opponent, card) for card in playable_cards], [])
+        if len(actions) == 0:
+            return None
+        action = min(actions, key=lambda action: action.cost)
+        return action
 
     def cost_play_on_increasing(self, opp, card):
         return abs(self.increasing_list[-1].value - card.value)
@@ -46,6 +46,7 @@ class StarterPlayer(BasePlayer):
         return 120 - abs(opp.decreasing_list[-1].value - card.value)
 
 class MediumPlayer(StarterPlayer):
+    # cost of 0 allows to only plays +/- 10 diff cards on self stacks
     MAXIMAL_EXTRA_PLAY_THRESHOLD = 0
 
     def cost_play_on_increasing(self, opp, card):
@@ -69,14 +70,25 @@ class MediumPlayer(StarterPlayer):
         playable_cards = self.get_playable_cards(opponent)
         # if no card is playable, we wait for next turn
         if len(playable_cards) == 0:
-            return None, None
+            return None
 
-        plays = sum([[(card, cost_play) for cost_play in self.register_valid_plays(opponent, card)] for card in playable_cards], [])
-        card, (cost, play) = min(plays, key=lambda triplet: triplet[1][0])
-        if cost > MediumPlayer.MAXIMAL_EXTRA_PLAY_THRESHOLD:
+        actions = sum([self.register_valid_actions(opponent, card) for card in playable_cards], [])
+        action = min(actions, key=lambda action: action.cost)
+        if action.cost > MediumPlayer.MAXIMAL_EXTRA_PLAY_THRESHOLD:
             # if the extra play is not interesting we do not play it
-            return None, None
-        return card, play
+            return None
+        return action
+
+class TrainablePlayer(StarterPlayer):
+    def play_state(self, opponent):
+        state = [
+            self.increasing_list[-1].value,
+            self.decreasing_list[-1].value,
+            opponent.increasing_list[-1].value,
+            opponent.decreasing_list[-1].value,
+        ]
+        # adding hand state
+        state += [card.value for card in self.hand]
 
 PLAYER_STATE_TEMPLATE = """player {}'s
     hand is {}
@@ -116,7 +128,7 @@ class Game:
 
 
 if __name__ == "__main__":
-    NUM_GAMES = 10000
+    NUM_GAMES = 30000
     #PLAYER_CLASS = [RandomPlayer, StarterPlayer, MediumPlayer]
     PLAYER_CLASS = [StarterPlayer, MediumPlayer]
     for Player0Class in PLAYER_CLASS:
@@ -127,4 +139,4 @@ if __name__ == "__main__":
                 game.reset()
                 winner_id = game.play_game()
                 win_count[winner_id] += 1
-            print(Player0Class.__name__, Player1Class.__name__, [p / NUM_GAMES * 100 for p in win_count])
+            print(Player0Class.__name__, Player1Class.__name__, ["{:.2f}".format(p / NUM_GAMES * 100) for p in win_count])
