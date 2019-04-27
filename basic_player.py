@@ -5,6 +5,14 @@ import random
 from cards import SelfCard, OppCard
 from utils import verbose_report
 
+
+# string template to display player state
+PLAYER_STATE_TEMPLATE = """player {}'s
+    hand is {}
+    increasing is {}
+    decreasing is {}"""
+
+
 class ForbiddenPlay(Exception):
     """ error raised whan an unauthorized play is intended """
     pass
@@ -23,6 +31,14 @@ class Action:
         self.action_type = action_type
         self.cost = cost
 
+
+class StrategyRegister:
+    strategy_map = {}
+
+def thegameia_strategy(player_class):
+    """ registering a new strategy """
+    StrategyRegister.strategy_map[player_class.__name__] = player_class
+    return player_class
 
 class BasePlayer:
     def __init__(self):
@@ -150,6 +166,15 @@ class BasePlayer:
             returning None, None indicates that the play does not want to
             play extra cards """
         return None
+
+    @property
+    def stack_state(self):
+        return [self.increasing_list[-1], self.decreasing_list[-1]]
+
+    @property
+    def full_state(self):
+        return self.stack_state + self.hand
+
 
     def display_state(self, name=""):
         print(PLAYER_STATE_TEMPLATE.format(name, self.hand, self.increasing_list, self.decreasing_list))
