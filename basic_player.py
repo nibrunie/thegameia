@@ -26,10 +26,17 @@ class Action:
     class PlayOnSelfDecreasing: pass
     class PlayOnOppIncreasing: pass
     class PlayOnOppDecreasing: pass
-    def __init__(self, card, action_type, cost):
+    def __init__(self, card, action_type, cost=None):
         self.card = card
         self.action_type = action_type
         self.cost = cost
+
+ACTION_LIST = [
+    Action.PlayOnSelfIncreasing,
+    Action.PlayOnSelfDecreasing,
+    Action.PlayOnOppIncreasing,
+    Action.PlayOnOppDecreasing
+]
 
 
 class StrategyRegister:
@@ -197,6 +204,20 @@ class BasePlayer:
             self.play_on_opponent_increasing(opponent, action.card)
         elif action.action_type is Action.PlayOnOppDecreasing:
             self.play_on_opponent_decreasing(opponent, action.card)
+
+    def is_action_valid(self, action, opponent):
+        if not action.card in self.hand:
+            return False
+        if action.action_type is Action.PlayOnSelfIncreasing:
+            return self.is_valid_play_on_increasing(card)
+        if action.action_type is Action.PlayOnSelfDecreasing:
+            return self.is_valid_play_on_decreasing(card)
+        if action.action_type is Action.PlayOnOppIncreasing:
+            return self.is_valid_play_on_opponent_increasing(opponent, card)
+        if action.action_type is Action.PlayOnOppDecreasing:
+            return self.is_valid_play_on_opponent_decreasing(opponent, card)
+        # default is invalid
+        return False
 
 
     def play_one_turn(self, opponent):
