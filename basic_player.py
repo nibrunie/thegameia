@@ -209,13 +209,13 @@ class BasePlayer:
         if not action.card in self.hand:
             return False
         if action.action_type is Action.PlayOnSelfIncreasing:
-            return self.is_valid_play_on_increasing(card)
+            return self.is_valid_play_on_increasing(action.card)
         if action.action_type is Action.PlayOnSelfDecreasing:
-            return self.is_valid_play_on_decreasing(card)
+            return self.is_valid_play_on_decreasing(action.card)
         if action.action_type is Action.PlayOnOppIncreasing:
-            return self.is_valid_play_on_opponent_increasing(opponent, card)
+            return self.is_valid_play_on_opponent_increasing(opponent, action.card)
         if action.action_type is Action.PlayOnOppDecreasing:
-            return self.is_valid_play_on_opponent_decreasing(opponent, card)
+            return self.is_valid_play_on_opponent_decreasing(opponent, action.card)
         # default is invalid
         return False
 
