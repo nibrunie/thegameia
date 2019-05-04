@@ -61,6 +61,11 @@ class BasePlayer:
         # stacks this turn
         self.has_played_on_opp_this_turn = False
 
+    def reset_statistics(self):
+        pass
+    def display_statistics(self):
+        print("no statistics logged for {}".format(self.__class__.__name))
+
     def reset_turn(self):
         if self.has_played_on_opp_this_turn:
             # refill hand completely

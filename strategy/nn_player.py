@@ -10,127 +10,20 @@ from tensorflow import keras
 from basic_player import BasePlayer, thegameia_strategy, Action, ACTION_LIST
 from game_simulator import Game
 from utils import verbose_report
+from statistics import evaluate_strategy
 
-from medium_player import StarterPlayer
-from random_player import RandomPlayer
-
-def value_to_one_hot(value):
-    """ covert index @p value to a one-hot vector of size 60 (card state)
-        encoding index """
-    vector = new_empty_vector()
-    vector[value-1] = 1
-    return vector
-
-def new_empty_vector():
-    return np.zeros(60)
-
-def stack_state_to_vector(stack_state):
-    assert len(stack_state) == 2
-    vector = np.zeros(2 * 60)
-    for index, card in enumerate(stack_state):
-        vector[index * 60 + card.value - 1] = 1
-    return vector
-
-def full_state_to_vector(state):
-    """ Translate a list of [increasing stack top, decreasing stack top, hand cards]
-        to the concatenation of 8 60-wide one hot vectors """
-    # complementary vector completes hand to 6 cards
-    complementary_vector = new_empty_vector() * (8 - len(state))
-    return sum([value_to_one_hot(card.value) for card in state], []) + complementary_vector
-
-def generate_one_card_training_data(num_games):
-    """ generate training data using @p num_games parties simulation """
-    training_data = []
-    game = Game(RandomPlayer(), RandomPlayer())
-    for i in range(num_games):
-        # simulating a new game
-        game.reset()
-        player_id = 0
-        while True:
-            player = game.players[player_id]
-            opponent = game.get_opponent(player_id)
-            player_vector = stack_state_to_vector(player.stack_state)
-            opponent_vector = stack_state_to_vector(opponent.stack_state)
-            # generating input / expected for each card in hand
-            for card in player.hand:
-                is_valid = player.has_valid_play(opponent, card)
-                input_vector = np.concatenate((player_vector, opponent_vector, value_to_one_hot(card.value)))
-                output_vector = 1 if is_valid else 0
-                training_data.append((
-                    input_vector,
-                    output_vector
-                ))
-            valid = game.play_one_turn(player_id)
-            if not valid: break
-            if game.players[player_id].win_condition():
-                verbose_report("player {} has won".format(player_id))
-                break
-            # switch to next player
-            player_id = 1 - player_id
-    return training_data
+from strategy.medium_player import StarterPlayer, MediumPlayer
+from strategy.random_player import RandomPlayer
+from strategy.basic_nn import TrainablePlayer
+from strategy.nn_utils import stack_state_to_vector, value_to_one_hot
 
 
-class TrainablePlayer(StarterPlayer):
-    def __init__(self):
-        pass
-
-    def build_model(self):
-        print("building model")
-        # input state is [4 stack values, One single hand card value]
-        # output is [probability card is invalid, probability card is valid]
-        self.model = keras.Sequential([
-            keras.layers.Dense(16, activation=tf.nn.relu, input_shape=(60*5,)),
-            keras.layers.Dense(16, activation=tf.nn.relu),
-            keras.layers.Dense(16, activation=tf.nn.relu),
-            keras.layers.Dense(2, activation=tf.nn.softmax),
-        ])
-        self.model.summary()
-
-        self.model.compile(optimizer='adam',
-                      loss='sparse_categorical_crossentropy',
-                      metrics=['accuracy'])
-
-    def train_model(self, num_party=2000, epochs=5):
-        print("generating training data")
-        training_data = generate_one_card_training_data(num_party)
-        print("training model")
-        training_inputs = np.array([inputs for inputs, _ in training_data])
-        training_outputs = np.array([outputs for _, outputs in training_data])
-        print(training_inputs.shape, training_outputs.shape)
-        self.model.fit(training_inputs, training_outputs, epochs=epochs)
-
-    def evaluate_model(self, num_party=10):
-        print("evaluating model")
-        label_data = generate_one_card_training_data(num_party)
-        label_inputs = np.array([inputs for inputs, _ in label_data])
-        label_outputs = np.array( [outputs for _, outputs in label_data])
-        test_loss, test_acc = self.model.evaluate(label_inputs, label_outputs)
-        print('Test accuracy:', test_acc)
 
 
-    def execute_model(self, player, opponent):
-        # build state
-        player_vector = stack_state_to_vector(player.stack_state)
-        opponent_vector = stack_state_to_vector(opponent.stack_state)
-        for card in player.hand:
-            input_vector = np.concatenate((player_vector, opponent_vector, value_to_one_hot(card.value)))
-            predictions = self.model.predict(np.array([input_vector]))
-            prediction = np.argmax(predictions[0,:])
-            is_valid = player.has_valid_play(opponent, card)
-            print(card, predictions, prediction, is_valid)
 
-
-    def play_state(self, opponent):
-        state = [
-            self.increasing_list[-1].value,
-            self.decreasing_list[-1].value,
-            opponent.increasing_list[-1].value,
-            opponent.decreasing_list[-1].value,
-        ]
-        # adding hand state
-        state += [card.value for card in self.hand]
-
+@thegameia_strategy
 class KnowledgablePlayer(TrainablePlayer):
+    """ Player strategy using reinforcement learning to determine best play """
     def __init__(self):
         super().__init__()
         # statistics
@@ -147,9 +40,9 @@ class KnowledgablePlayer(TrainablePlayer):
         # input state is [4 stack values, 6 hand card value]
         # output is [24 probabilities of playing one of the hand card on one of the stacks]
         self.model = keras.Sequential([
-            keras.layers.Dense(16, activation=tf.nn.relu, input_shape=(60*10,)),
-            keras.layers.Dense(16, activation=tf.nn.relu),
-            keras.layers.Dense(16, activation=tf.nn.relu),
+            keras.layers.Dense(24 * 24, activation=tf.nn.relu, input_shape=(60*10,)),
+            keras.layers.Dense(24 * 24, activation=tf.nn.relu),
+            keras.layers.Dense(24 * 24, activation=tf.nn.relu),
             keras.layers.Dense(24 * 24, activation="linear"),
         ])
         self.model.summary()
@@ -271,23 +164,26 @@ class KnowledgablePlayer(TrainablePlayer):
     def train_model(self, num_party=100, epochs=5):
         print("training model")
 
-        WIN_BONUS = 5000
-        LOSS_MALUS = -5000
-        INVALID_MALUS = -1000
+        VALID_BONUS = 0 # 200
+        WIN_BONUS = 0 # 500
+        LOSS_MALUS = 0 # -500
+        INVALID_MALUS = 0 # -500
 
         # now execute the q learning
         # learning parameters
-        y = 0.95
-        eps = 0.5
+        y = 0.0 # 0.95
+        eps = 0.9
         decay_factor = 0.999
         r_avg_list = []
-        game = Game(self, RandomPlayer())
+        game = Game(self, StarterPlayer())
         opponent = game.get_opponent(0)
         for i in range(num_party):
+            # display statistics
+            if i % (num_party / 20) == 0:
+                print("Episode {} of {}".format(i + 1, num_party))
+                evaluate_strategy(self, [opponent], num_eval_game=100)
             s = game.reset()
             eps *= decay_factor
-            if i % (num_party / 10) == 0:
-                print("Episode {} of {}".format(i + 1, num_party))
             r_sum = 0
             game_ended = False
             while not game_ended:
@@ -296,12 +192,14 @@ class KnowledgablePlayer(TrainablePlayer):
                 current_state = self.get_state(opponent)
                 target_vec = self.model.predict(np.array([current_state]))[0]
                 if np.random.random() < eps:
+                    verbose_report("greedy random")
                     # random input to implement epsilon-greedy policy
                     action0 = np.random.randint(0, 24)
                     action1 = np.random.randint(0, 24)
                     a = action0 + 24 * action1
                 else:
-                    a= np.argmax(target_vec)
+                    a = np.argmax(target_vec)
+                    verbose_report("a={}".format(a))
                     action0 = int(a % 24)
                     action1 = int(a / 24)
                 card0_id = int(action0 % 6)
@@ -332,6 +230,7 @@ class KnowledgablePlayer(TrainablePlayer):
                             reward = 0
                             remaining_action = 1
                         else:
+                            reward += VALID_BONUS
                             reward += self.evaluate_state(opponent)
                             self.execute(action1_obj, opponent)
                             reward += self.evaluate_state(opponent)
@@ -372,6 +271,7 @@ class KnowledgablePlayer(TrainablePlayer):
                 else:
                     # valid and next state
                     target = reward + y * np.max(self.model.predict(np.array([next_state])))
+                verbose_report("    target[{}]={}".format(a, target))
                 target_vec[a] = target
                 self.model.fit(np.array([current_state]), np.array([target_vec]), epochs=1, verbose=0)
                 r_sum += reward
@@ -398,61 +298,19 @@ class KnowledgablePlayer(TrainablePlayer):
             is_valid = player.has_valid_play(opponent, card)
             print(card, predictions, prediction, is_valid)
 
+    def display_statistics(self):
+        valid_count = self.valid_count_action0 + self.valid_count_action1
+        proba_valid = valid_count / self.play_count
+        print("NN player played {}({} + {})/{} valid actions {:.2f}".format(
+            valid_count,
+            self.valid_count_action0,
+            self.valid_count_action1,
+            self.play_count,
+            100 * proba_valid))
 
-    def play_state(self, opponent):
-        state = [
-            self.increasing_list[-1].value,
-            self.decreasing_list[-1].value,
-            opponent.increasing_list[-1].value,
-            opponent.decreasing_list[-1].value,
-        ]
-        # adding hand state
-        state += [card.value for card in self.hand]
 
 
-def main_trainable_player():
-    parser = argparse.ArgumentParser(description="NN based IA for the Game")
-    parser.add_argument("--num", type=int, default=100, help="number of party to simulate for NN training")
-    parser.add_argument("--epochs", type=int, default=5, help="number of epoch to run for training")
-    parser.add_argument("--save-file", type=str, default=None, help="NN weights will be saved to this file")
-    parser.add_argument("--load-file", type=str, default=None, help="NN weights will be stored from this file (bypass training)")
-    args = parser.parse_args()
 
-    # train and evaluate model
-    nn_player = TrainablePlayer()
-    nn_player.build_model()
-    if args.load_file:
-        nn_player.model.load_weights(args.load_file)
-
-    else:
-        nn_player.train_model(args.num, args.epochs)
-        if args.save_file:
-            nn_player.model.save_weights(args.save_file)
-    if True:
-        print("evaluating NN during one game")
-        # execute model on one game
-        game = Game(RandomPlayer(), RandomPlayer())
-        # simulating a new game
-        game.reset()
-        player_id = 0
-        while True:
-            player = game.players[player_id]
-            opponent = game.get_opponent(player_id)
-            # evaluating model
-            print("\nnew evaluation")
-            player.display_state(str(player_id))
-            nn_player.execute_model(player, opponent)
-
-            #
-            valid = game.play_one_turn(player_id)
-            if not valid: break
-            if game.players[player_id].win_condition():
-                verbose_report("player {} has won".format(player_id))
-                break
-            # switch to next player
-            player_id = 1 - player_id
-
-    nn_player.evaluate_model()
 
 def main_knowledgeable_player():
     parser = argparse.ArgumentParser(description="NN based IA for the Game")
@@ -493,16 +351,21 @@ def main_knowledgeable_player():
         player_id = 0
         winner_id = game.play_game()
         win_counts[winner_id] += 1
-    for winner_id in range(2):
-        print("player {} ({}) wins {} / {} = {:.2f} % !".format(winner_id, game.players[winner_id].__class__.__name__, win_counts[winner_id], args.num_eval_game, win_counts[winner_id] / args.num_eval_game * 100))
+    if args.num_eval_game:
+        for winner_id in range(2):
+            print("player {} ({}) wins {} / {} = {:.2f} % !".format(winner_id, game.players[winner_id].__class__.__name__, win_counts[winner_id], args.num_eval_game, win_counts[winner_id] / args.num_eval_game * 100))
 
-    valid_count = nn_player.valid_count_action0 + nn_player.valid_count_action1
-    print("NN player played {}({} + {})/{} valid actions {:.2f}".format(
-        valid_count,
-        nn_player.valid_count_action0,
-        nn_player.valid_count_action1,
-        nn_player.play_count,
-        100 * valid_count / nn_player.play_count))
+        valid_count = nn_player.valid_count_action0 + nn_player.valid_count_action1
+        print("NN player played {}({} + {})/{} valid actions {:.2f}".format(
+            valid_count,
+            nn_player.valid_count_action0,
+            nn_player.valid_count_action1,
+            nn_player.play_count,
+            100 * valid_count / nn_player.play_count))
+
+    evaluate_strategy(nn_player, [RandomPlayer()], 100)
+    evaluate_strategy(nn_player, [MediumPlayer()], 100)
+    evaluate_strategy(nn_player, [StarterPlayer()], 100)
 
 
 if __name__ == "__main__":

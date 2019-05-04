@@ -14,7 +14,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='IA design and evaluation framework for The Game')
     parser.add_argument('--num', type=int, help='number of party to simulate')
     parser.add_argument('--verbose', action="store_const", const=True, default=False, help='activate verbose message')
-    parser.add_argument('--strategy-list', default="StarterPlayer,MediumPlayer", type=str, help='list of strategies to be tested')
+    parser.add_argument('--strategy-list', default="StarterPlayer,MediumPlayer", type=str, help='list of strategies to be tested among {}'.format(", ".join(k for k in StrategyRegister.strategy_map)))
     args = parser.parse_args()
 
     NUM_GAMES = args.num
